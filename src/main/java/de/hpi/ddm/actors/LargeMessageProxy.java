@@ -23,8 +23,8 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	public static final String DEFAULT_NAME = "largeMessageProxy";
 	public static final int MAX_MSG_LENGTH = 512;	// arbitrary number
 
-	private LinkedList<BytesMessage> pleaseSendMe = new LinkedList<>();
-	private LinkedList<BytesMessage> alreadyReceived = new LinkedList<>();
+	private LinkedList<BytesMessage> pleaseSendMe = new LinkedList<>();	// for the sender
+	private LinkedList<BytesMessage> alreadyReceived = new LinkedList<>(); // for the receiver
 
 	public static Props props() {
 		return Props.create(LargeMessageProxy.class);
@@ -55,7 +55,6 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		private static final long serialVersionUID = 1029319082390182309L;
 		private ActorRef sender;
 		private ActorRef receiver;
-		private int lastChunk;
 	}
 	
 	/////////////////
@@ -89,6 +88,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 			pull.sender.tell(m, this.self());
 		}
 	}
+	// sending
 	private void handle(LargeMessage<?> largeMessage) {
 		Object message = largeMessage.getMessage();
 		ActorRef sender = this.sender();
@@ -117,12 +117,14 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		this.log().error("Splitting "+serialized.length+"  bytes");
 		// split serialized data into smaller chunks
 		int rangeStart = 0, rangeEnd = 0;
+
+
 		for (rangeStart = 0; rangeStart < serialized.length; rangeStart += LargeMessageProxy.MAX_MSG_LENGTH) {
 			rangeEnd = rangeStart+LargeMessageProxy.MAX_MSG_LENGTH;
 			if (rangeEnd > serialized.length) {
 				rangeEnd = serialized.length;
 			}
-			this.log().error(String.format("Added new range: %d - %d (length: %d)", rangeStart, rangeEnd, rangeEnd-rangeStart));
+			this.log().error(String.format("Added new range: %d - %d (length: %d)", rangeStart, rangeEnd-1, rangeEnd-rangeStart));
 
 			// extract range
 			range = Arrays.copyOfRange(serialized, rangeStart, rangeEnd);
@@ -135,7 +137,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		BytesMessage firstMessage = this.pleaseSendMe.removeFirst();
 		receiverProxy.tell(firstMessage, this.self());
 	}
-
+	// receiver
 	private void handle(BytesMessage<?> message) {
 		// TODO: With option a): Store the message, ask for the next chunk and, if all chunks are present, reassemble the message's content, deserialize it and pass it to the receiver.
 		// The following code assumes that the transmitted bytes are the original message, which they shouldn't be in your proper implementation ;-)
@@ -153,7 +155,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 				byte[] bytes = (byte[]) msg.bytes;
 				buff.put(bytes);
 			}
-			this.log().error("Total reconstructed length: ", buff.array().length);
+			this.log().error("Total reconstructed length: {}", buff.position());
 
 			// now deserialize
 			Object deserialized = KryoPoolSingleton.get().fromBytes(buff.array());
@@ -164,7 +166,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 
 			this.log().error("Requesting next chunk");
 
-			senderProxy.tell(new PullMessage(this.self(), message.getSender(), this.alreadyReceived.size()), this.self());
+			senderProxy.tell(new PullMessage(this.self(), message.getSender()), this.self());
 		}
 	}
 }
