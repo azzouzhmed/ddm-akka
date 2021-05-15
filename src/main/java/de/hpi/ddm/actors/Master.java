@@ -16,7 +16,18 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 public class Master extends AbstractLoggingActor {
+	/*
+		README:
+		the current flow is as follows:
+		1. the workers build a rainbow table and send them to the HashStoreActor
+		2. the workers look up the hints to get the password alphabet and crack it
 
+		1. (Master) -> BuildRainbowTableMessage -> (Worker) -> NewContentMessage -> (HashStoreActor) -> NewContentAddedMessage -> (Master) (repeat)
+		2. (Master) -> QueryPasswordHintsMessage -> (Worker) -> GetAlphabetMessage -> (HashStoreActor) -> PasswordAlphabetMessage -> (Worker) -> PasswordCrackedMessage -> (Master) (repeat)
+
+		Currently, the master is not capable of starting/repeating those processes
+
+	 */
 	////////////////////////
 	// Actor Construction //
 	////////////////////////
@@ -50,6 +61,13 @@ public class Master extends AbstractLoggingActor {
 		private List<String[]> lines;
 	}
 
+	@Data @NoArgsConstructor @AllArgsConstructor
+	public static class PasswordCrackedMessage implements Serializable {
+		private static final long serialVersionUID = 8343040942748609598L;
+		private String password;
+		private String passwordHash;
+	}
+
 	@Data
 	public static class RegistrationMessage implements Serializable {
 		private static final long serialVersionUID = 3303081601659723997L;
@@ -64,8 +82,11 @@ public class Master extends AbstractLoggingActor {
 	private final List<ActorRef> workers;
 	private final ActorRef largeMessageProxy;
 	private final BloomFilter welcomeData;
-
+	private static int completedBuilders = 0;
 	private long startTime;
+
+	// in the beginning, this needs to be populated with the individual tasks
+	private List<Worker.BuildRainbowTableMessage> todo = new ArrayList<>();
 	
 	/////////////////////
 	// Actor Lifecycle //
@@ -87,14 +108,34 @@ public class Master extends AbstractLoggingActor {
 				.match(BatchMessage.class, this::handle)
 				.match(Terminated.class, this::handle)
 				.match(RegistrationMessage.class, this::handle)
+				.match(HashStoreActor.NewContentAddedMessage.class, this::collect)
 				// TODO: Add further messages here to share work between Master and Worker actors
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
 
+	protected void collect(HashStoreActor.NewContentAddedMessage message) {
+		// here we decide to start additional builders
+
+		// work remaining tasks
+		if(this.todo.size() > 0) {
+			Worker.BuildRainbowTableMessage msg = this.todo.remove(0);
+			message.getBuilder().tell(msg, this.self());
+		} else {
+			// wait 4 all
+			if(++completedBuilders == HashStoreActor.ALPHABET_LENGTH) {
+				// now start cracking
+				this.log().info("Now cracking!");
+			}
+		}
+	}
+
 	protected void handle(StartMessage message) {
 		this.startTime = System.currentTimeMillis();
-		
+
+		// first we start building the rainbow table
+
+
 		this.reader.tell(new Reader.ReadMessage(), this.self());
 	}
 	
@@ -163,5 +204,10 @@ public class Master extends AbstractLoggingActor {
 		this.context().unwatch(message.getActor());
 		this.workers.remove(message.getActor());
 		this.log().info("Unregistered {}", message.getActor());
+	}
+
+	protected void handle(PasswordCrackedMessage message) {
+		// okay, continue cracking
+
 	}
 }

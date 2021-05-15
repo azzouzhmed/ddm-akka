@@ -4,6 +4,8 @@ import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 import akka.actor.AbstractLoggingActor;
@@ -14,6 +16,7 @@ import akka.cluster.Cluster;
 import akka.cluster.ClusterEvent.CurrentClusterState;
 import akka.cluster.ClusterEvent.MemberRemoved;
 import akka.cluster.ClusterEvent.MemberUp;
+import de.hpi.ddm.singletons.HashStoreSingleton;
 import de.hpi.ddm.structures.BloomFilter;
 import de.hpi.ddm.systems.MasterSystem;
 import lombok.AllArgsConstructor;
@@ -34,6 +37,8 @@ public class Worker extends AbstractLoggingActor {
 		return Props.create(Worker.class);
 	}
 
+	private int currentCrackAttemptBitMap = 0; // int has 32 bit, we only need 10 for our passwords
+
 	public Worker() {
 		this.cluster = Cluster.get(this.context().system());
 		this.largeMessageProxy = this.context().actorOf(LargeMessageProxy.props(), LargeMessageProxy.DEFAULT_NAME);
@@ -48,7 +53,21 @@ public class Worker extends AbstractLoggingActor {
 		private static final long serialVersionUID = 8343040942748609598L;
 		private BloomFilter welcomeData;
 	}
-	
+
+
+	@Data @NoArgsConstructor @AllArgsConstructor
+	public static class QueryPasswordHintsMessage implements Serializable {
+		private static final long serialVersionUID = 8443040942748609598L;
+		private String hashedPassword;
+		private String[] hashedHints;
+	}
+
+	@Data @NoArgsConstructor @AllArgsConstructor
+	public static class BuildRainbowTableMessage implements Serializable {
+		private static final long serialVersionUID = 8443040942748609598L;
+		private char[] permutationAlphabet;
+	}
+
 	/////////////////
 	// Actor State //
 	/////////////////
@@ -85,9 +104,77 @@ public class Worker extends AbstractLoggingActor {
 				.match(MemberUp.class, this::handle)
 				.match(MemberRemoved.class, this::handle)
 				.match(WelcomeMessage.class, this::handle)
-				// TODO: Add further messages here to share work between Master and Worker actors
+				.match(BuildRainbowTableMessage.class, this::buildRainbowTable)
+				.match(HashStoreActor.PasswordAlphabetMessage.class, this::crackPassword)
+				.match(QueryPasswordHintsMessage.class, this::preparePassword)
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
+	}
+	private void buildRainbowTable(BuildRainbowTableMessage message) {
+		char[] alphabet = message.permutationAlphabet;
+		var list = new ArrayList<String>();
+
+		// create permuatations
+		heapPermutation(alphabet, alphabet.length, list);
+
+		this.log().info("Total #permutations: {}", list.size());
+		this.log().info(list.get(0));
+		this.log().info(list.get(list.size()-1));
+
+		// hash all
+		HashMap<String, String> map = new HashMap<>();
+		list.parallelStream().forEach(permutation -> {
+			String hash = hash(permutation);
+			map.put(hash, permutation);
+		});
+
+		// update store
+		this.context().actorSelection("/user/"+HashStoreActor.PROXY_NAME)
+			.tell(new HashStoreActor.NewContentMessage(map, this.self()), this.self());
+	}
+
+	// 11 different chars
+	// 11 * 10 * 9 * 8 * ... * 2 = 11!
+	// HashMap<Hash, Hint>
+	// map[key]
+	// |Hint| = 10
+	// 20*11! =  798 336 000 ~= 798 MB
+	private void crackPassword(HashStoreActor.PasswordAlphabetMessage message) {
+		char[] alphabet = message.getPasswordAlphabet().toCharArray();
+		String passwordHash = message.getPassword();
+
+		// prepare first attempt
+		this.currentCrackAttemptBitMap = 0;
+
+		// now start the cracking
+		final int maxPasswordPermutations = (int) Math.pow(2, HashStoreActor.PASSWORD_LENGTH);
+		for(int i = 0; i < maxPasswordPermutations; i++) {
+			String password = attemptToString(alphabet);
+			if(hash(password) == passwordHash) {
+				this.log().error("FOUND THE HASH: {}", password);
+				this.context().actorSelection("/user/"+Master.DEFAULT_NAME)
+						.tell(new Master.PasswordCrackedMessage(password, passwordHash), this.self());
+				return;
+			}
+
+			// calculate next state
+			this.currentCrackAttemptBitMap++;
+		}
+		this.log().error("Password with hash {} could not be cracked!", passwordHash);
+	}
+	private String attemptToString(char[] alphabet) {
+		StringBuilder builder = new StringBuilder();
+		for(int i = 0; i < HashStoreActor.PASSWORD_LENGTH; i++) {
+			builder.append(alphabet[(this.currentCrackAttemptBitMap >> i) & 1]);
+		}
+		return builder.toString();
+	}
+
+	// queries the alphabet
+	private void preparePassword(QueryPasswordHintsMessage message) {
+		// when completed, this will call crackHint
+		this.context().actorSelection("/user/" + HashStoreActor.DEFAULT_NAME)
+				.tell(new HashStoreActor.GetAlphabetMessage(message.getHashedHints(), message.getHashedPassword(), this.self()), this.self());
 	}
 
 	private void handle(CurrentClusterState message) {
@@ -142,13 +229,13 @@ public class Worker extends AbstractLoggingActor {
 	// Generating all permutations of an array using Heap's Algorithm
 	// https://en.wikipedia.org/wiki/Heap's_algorithm
 	// https://www.geeksforgeeks.org/heaps-algorithm-for-generating-permutations/
-	private void heapPermutation(char[] a, int size, int n, List<String> l) {
+	private void heapPermutation(char[] a, int size, List<String> l) {
 		// If size is 1, store the obtained permutation
 		if (size == 1)
 			l.add(new String(a));
 
 		for (int i = 0; i < size; i++) {
-			heapPermutation(a, size - 1, n, l);
+			heapPermutation(a, size - 1, l);
 
 			// If size is odd, swap first and last element
 			if (size % 2 == 1) {
