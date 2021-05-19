@@ -5,11 +5,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import akka.actor.AbstractLoggingActor;
-import akka.actor.ActorRef;
-import akka.actor.PoisonPill;
-import akka.actor.Props;
-import akka.actor.Terminated;
+import akka.actor.*;
 import de.hpi.ddm.structures.BloomFilter;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -61,12 +57,6 @@ public class Master extends AbstractLoggingActor {
 		private List<String[]> lines;
 	}
 
-	@Data @NoArgsConstructor @AllArgsConstructor
-	public static class PasswordCrackedMessage implements Serializable {
-		private static final long serialVersionUID = 8343040942748609598L;
-		private String password;
-		private String passwordHash;
-	}
 
 	@Data
 	public static class RegistrationMessage implements Serializable {
@@ -85,9 +75,7 @@ public class Master extends AbstractLoggingActor {
 	private static int completedBuilders = 0;
 	private long startTime;
 
-	// in the beginning, this needs to be populated with the individual tasks
-	private List<Worker.BuildRainbowTableMessage> todo = new ArrayList<>();
-	
+
 	/////////////////////
 	// Actor Lifecycle //
 	/////////////////////
@@ -108,26 +96,22 @@ public class Master extends AbstractLoggingActor {
 				.match(BatchMessage.class, this::handle)
 				.match(Terminated.class, this::handle)
 				.match(RegistrationMessage.class, this::handle)
-				.match(HashStoreActor.NewContentAddedMessage.class, this::collect)
+				.match(Worker.PasswordCrackedMessage.class, this::collect)
 				// TODO: Add further messages here to share work between Master and Worker actors
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
-
-	protected void collect(HashStoreActor.NewContentAddedMessage message) {
+	protected int passwordCounter = 0;
+	protected void collect(Worker.PasswordCrackedMessage message) {
 		// here we decide to start additional builders
-
-		// work remaining tasks
-		if(this.todo.size() > 0) {
-			Worker.BuildRainbowTableMessage msg = this.todo.remove(0);
-			message.getBuilder().tell(msg, this.self());
-		} else {
-			// wait 4 all
-			if(++completedBuilders == HashStoreActor.ALPHABET_LENGTH) {
-				// now start cracking
-				this.log().info("Now cracking!");
-			}
+		this.log().info("Worker {} cracked a password ({}): {} in {} ms0", message.getCracker(), passwordCounter++, message.getPlainPassword(), message.getTime());		if(todo.size() > 0) {
+			message.getCracker().tell(todo.remove(0), this.self());
 		}
+		if(todo.size() < 10) {
+			// fetch news
+			this.reader.tell(new Reader.ReadMessage(), this.self());
+		}
+		this.collector.tell(new Collector.CollectMessage(message.getPlainPassword()), this.self());
 	}
 
 	protected void handle(StartMessage message) {
@@ -138,7 +122,9 @@ public class Master extends AbstractLoggingActor {
 
 		this.reader.tell(new Reader.ReadMessage(), this.self());
 	}
-	
+
+	protected List<Worker.CrackPasswordMessage> todo = new ArrayList<>();
+	protected boolean started = false;
 	protected void handle(BatchMessage message) {
 		
 		// TODO: This is where the task begins:
@@ -162,15 +148,25 @@ public class Master extends AbstractLoggingActor {
 		}
 		
 		// TODO: Process the lines with the help of the worker actors
-		for (String[] line : message.getLines())
-			this.log().error("Need help processing: {}", Arrays.toString(line));
-		
+		for (String[] line : message.getLines()){
+			String password = line[4];
+			String[] hints = Arrays.copyOfRange(line, 5, line.length);
+			todo.add(new Worker.CrackPasswordMessage(password, hints));
+		}
+		if(!started) {
+			// for each worker work on todo
+			for (ActorRef worker : this.workers) {
+				if (todo.size() > 0) {
+					worker.tell(todo.remove(0), this.self());
+				}
+			}
+			started = true;
+		}
 		// TODO: Send (partial) results to the Collector
-		this.collector.tell(new Collector.CollectMessage("If I had results, this would be one."), this.self());
+		//this.collector.tell(new Collector.CollectMessage("If I had results, this would be one."), this.self());
 		
 		// TODO: Fetch further lines from the Reader
-		this.reader.tell(new Reader.ReadMessage(), this.self());
-		
+
 	}
 	
 	protected void terminate() {
@@ -206,8 +202,4 @@ public class Master extends AbstractLoggingActor {
 		this.log().info("Unregistered {}", message.getActor());
 	}
 
-	protected void handle(PasswordCrackedMessage message) {
-		// okay, continue cracking
-
-	}
 }

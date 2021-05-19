@@ -5,7 +5,6 @@ import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 
 import akka.actor.AbstractLoggingActor;
@@ -16,7 +15,6 @@ import akka.cluster.Cluster;
 import akka.cluster.ClusterEvent.CurrentClusterState;
 import akka.cluster.ClusterEvent.MemberRemoved;
 import akka.cluster.ClusterEvent.MemberUp;
-import de.hpi.ddm.singletons.HashStoreSingleton;
 import de.hpi.ddm.structures.BloomFilter;
 import de.hpi.ddm.systems.MasterSystem;
 import lombok.AllArgsConstructor;
@@ -56,16 +54,18 @@ public class Worker extends AbstractLoggingActor {
 
 
 	@Data @NoArgsConstructor @AllArgsConstructor
-	public static class QueryPasswordHintsMessage implements Serializable {
+	public static class PasswordCrackedMessage implements Serializable {
 		private static final long serialVersionUID = 8443040942748609598L;
-		private String hashedPassword;
-		private String[] hashedHints;
+		private String plainPassword;
+		private ActorRef cracker;
+		private long time;
 	}
 
 	@Data @NoArgsConstructor @AllArgsConstructor
-	public static class BuildRainbowTableMessage implements Serializable {
+	public static class CrackPasswordMessage implements Serializable {
 		private static final long serialVersionUID = 8443040942748609598L;
-		private char[] permutationAlphabet;
+		private String password;
+		private String[] hints;
 	}
 
 	/////////////////
@@ -76,6 +76,7 @@ public class Worker extends AbstractLoggingActor {
 	private final Cluster cluster;
 	private final ActorRef largeMessageProxy;
 	private long registrationTime;
+	private final String ALPHABET = "ABCDEFGHIJK";
 	
 	/////////////////////
 	// Actor Lifecycle //
@@ -104,63 +105,97 @@ public class Worker extends AbstractLoggingActor {
 				.match(MemberUp.class, this::handle)
 				.match(MemberRemoved.class, this::handle)
 				.match(WelcomeMessage.class, this::handle)
-				.match(BuildRainbowTableMessage.class, this::buildRainbowTable)
-				.match(HashStoreActor.PasswordAlphabetMessage.class, this::crackPassword)
-				.match(QueryPasswordHintsMessage.class, this::preparePassword)
+				.match(CrackPasswordMessage.class, this::crackPassword)
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
-	private void buildRainbowTable(BuildRainbowTableMessage message) {
-		char[] alphabet = message.permutationAlphabet;
-		var list = new ArrayList<String>();
 
-		// create permuatations
-		heapPermutation(alphabet, alphabet.length, list);
 
-		this.log().info("Total #permutations: {}", list.size());
-		this.log().info(list.get(0));
-		this.log().info(list.get(list.size()-1));
-
-		// hash all
-		HashMap<String, String> map = new HashMap<>();
-		list.parallelStream().forEach(permutation -> {
-			String hash = hash(permutation);
-			map.put(hash, permutation);
-		});
-
-		// update store
-		this.context().actorSelection("/user/"+HashStoreActor.PROXY_NAME)
-			.tell(new HashStoreActor.NewContentMessage(map, this.self()), this.self());
+	protected String getMissingCharFromHint(String hint) {
+		String s = null;
+		for(char c : ALPHABET.toCharArray()) {
+			s = String.valueOf(c);
+			if(!hint.contains(s)) {
+				return s;
+			}
+		}
+		throw new RuntimeException("No char of "+ALPHABET+" is missing in "+hint);
 	}
-
 	// 11 different chars
 	// 11 * 10 * 9 * 8 * ... * 2 = 11!
 	// HashMap<Hash, Hint>
 	// map[key]
 	// |Hint| = 10
 	// 20*11! =  798 336 000 ~= 798 MB
-	private void crackPassword(HashStoreActor.PasswordAlphabetMessage message) {
-		char[] alphabet = message.getPasswordAlphabet().toCharArray();
-		String passwordHash = message.getPassword();
+	private void crackPassword(CrackPasswordMessage message) {
+		// Crack hashes
+		//this.log().error("CRACKING PASSWORD {} {}", message.password, message.hints[0]);
+		long start = System.currentTimeMillis();
+		List<String> crackedHashes = new ArrayList<>();
+		StringBuilder passwordAlphabet = new StringBuilder();
+		String alphabet = this.ALPHABET;
+		int skipChars = 0;
+		for(int hashIndex = 0; hashIndex < message.hints.length; hashIndex++) {
+			String hash = message.hints[hashIndex];
+			//this.log().info("Cracking hash {}", hash);
+
+			// try out all permutations for every char
+			boolean foundHash = false;
+			while(!foundHash) {
+				char c = alphabet.toCharArray()[hashIndex + skipChars];
+
+				//this.log().info("Working on char {}", c);
+				List<String> attempts = new ArrayList<>();
+				String currAlphabet = alphabet.replace(String.valueOf(c), "");
+				heapPermutation(currAlphabet.toCharArray(), 10, attempts);
+				//	this.log().info("char {} hashIndex {}/{} skipChars {}", c, hashIndex,message.hints.length,skipChars);
+				// crack the permutations
+				for (String attempt : attempts) {
+					if (hash(attempt).equals(hash)) {
+							//this.log().error("CRACKED HINT {} {}", attempt, passwordAlphabet.toString());
+						//crackedHashes.add(attempt);
+
+						foundHash = true;
+						break;
+					}
+				}
+				if(!foundHash) {
+					passwordAlphabet.append(c);
+					skipChars++;
+				}
+				if(passwordAlphabet.length() == 2) {
+					//this.log().error("Skipping the rest");
+
+					foundHash = true;
+					hashIndex = 1000;	// BREAK
+				}
+			}
+		}
+		if(passwordAlphabet.length() == 1) {
+			passwordAlphabet.append('K');
+		}
+		//this.log().info("GOT THE PASSWORD ALPHABET {}", passwordAlphabet.toString());
 
 		// prepare first attempt
 		this.currentCrackAttemptBitMap = 0;
 
 		// now start the cracking
 		final int maxPasswordPermutations = (int) Math.pow(2, HashStoreActor.PASSWORD_LENGTH);
+		char[] passwordChars = passwordAlphabet.toString().toCharArray();
 		for(int i = 0; i < maxPasswordPermutations; i++) {
-			String password = attemptToString(alphabet);
-			if(hash(password) == passwordHash) {
-				this.log().error("FOUND THE HASH: {}", password);
-				this.context().actorSelection("/user/"+Master.DEFAULT_NAME)
-						.tell(new Master.PasswordCrackedMessage(password, passwordHash), this.self());
+			String password = attemptToString(passwordChars);
+			if(hash(password).equals(message.password)) {
+				//this.log().error("FOUND THE HASH: {}", password);
+				this.context().actorSelection("/user/" + Master.DEFAULT_NAME)
+						.tell(new PasswordCrackedMessage(password, this.self(), System.currentTimeMillis()-start), this.self());
 				return;
 			}
 
 			// calculate next state
 			this.currentCrackAttemptBitMap++;
 		}
-		this.log().error("Password with hash {} could not be cracked!", passwordHash);
+
+
 	}
 	private String attemptToString(char[] alphabet) {
 		StringBuilder builder = new StringBuilder();
@@ -170,12 +205,6 @@ public class Worker extends AbstractLoggingActor {
 		return builder.toString();
 	}
 
-	// queries the alphabet
-	private void preparePassword(QueryPasswordHintsMessage message) {
-		// when completed, this will call crackHint
-		this.context().actorSelection("/user/" + HashStoreActor.DEFAULT_NAME)
-				.tell(new HashStoreActor.GetAlphabetMessage(message.getHashedHints(), message.getHashedPassword(), this.self()), this.self());
-	}
 
 	private void handle(CurrentClusterState message) {
 		message.getMembers().forEach(member -> {

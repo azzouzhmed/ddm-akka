@@ -95,31 +95,31 @@ public class HashStoreActor extends AbstractLoggingActor {
         content.putAll(content);
         // inform the master
         this.context().actorSelection("/user/"+Master.DEFAULT_NAME)
-                .tell(new NewContentAddedMessage(message.builder), this.self());
-    }
-
-    protected void replyWithPasswordAlphabet(GetAlphabetMessage message) {
-        // look up hash
-        var alphabets = new ArrayList<String>();
-
-        for(String hash : message.hashedHints) {
-            alphabets.add(getMissingCharFromHint(hash));
-        }
-
-        // Now get chars which do not exist
-        var opposite = ALPHABET.chars().filter(d -> !alphabets.contains(d))
-                .collect(StringBuilder::new,
-                    StringBuilder::appendCodePoint, StringBuilder::append)
-                .toString();
-        message.requester.tell(new PasswordAlphabetMessage(opposite, message.password), this.self());
-    }
-
-    protected String getMissingCharFromHint(String hint) {
-        for(char c : ALPHABET.toCharArray()) {
-            if(!hint.contains(String.valueOf(c))) {
-                return String.valueOf(c);
+                        .tell(new NewContentAddedMessage(message.builder), this.self());
             }
-        }
-        throw new RuntimeException("No char of "+ALPHABET+" is missing in "+hint);
-    }
+
+            protected void replyWithPasswordAlphabet(GetAlphabetMessage message) {
+                // look up hash
+                var alphabets = new ArrayList<String>();
+
+                for(String hash : message.hashedHints) {
+                    alphabets.add(getMissingCharFromHint(hash));
+                }
+
+                // Now get chars which do not exist
+                var opposite = ALPHABET.chars().filter(d -> !alphabets.contains(d))
+                        .collect(StringBuilder::new,
+                            StringBuilder::appendCodePoint, StringBuilder::append)
+                        .toString();
+                message.requester.tell(new PasswordAlphabetMessage(opposite, message.password), this.self());
+            }
+
+            protected String getMissingCharFromHint(String hint) {
+                for(char c : ALPHABET.toCharArray()) {
+                    if(!hint.contains(String.valueOf(c))) {
+                        return String.valueOf(c);
+                    }
+                }
+                throw new RuntimeException("No char of "+ALPHABET+" is missing in "+hint);
+            }
 }

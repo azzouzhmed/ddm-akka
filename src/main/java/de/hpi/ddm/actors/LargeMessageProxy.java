@@ -110,11 +110,9 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		// receiverProxy.tell(new BytesMessage<>(message, sender, receiver), this.self());
 
 		// serialize large message
-		this.log().error("Starting serialization");
 		byte[] serialized = KryoPoolSingleton.get().toBytesWithClass(message);
 		byte[] range = new byte[LargeMessageProxy.MAX_MSG_LENGTH];
 
-		this.log().error("Splitting "+serialized.length+"  bytes");
 		// split serialized data into smaller chunks
 		int rangeStart = 0, rangeEnd = 0;
 
@@ -124,7 +122,6 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 			if (rangeEnd > serialized.length) {
 				rangeEnd = serialized.length;
 			}
-			this.log().error(String.format("Added new range: %d - %d (length: %d)", rangeStart, rangeEnd-1, rangeEnd-rangeStart));
 
 			// extract range
 			range = Arrays.copyOfRange(serialized, rangeStart, rangeEnd);
@@ -155,16 +152,13 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 				byte[] bytes = (byte[]) msg.bytes;
 				buff.put(bytes);
 			}
-			this.log().error("Total reconstructed length: {}", buff.position());
 
 			// now deserialize
 			Object deserialized = KryoPoolSingleton.get().fromBytes(buff.array());
 
-			this.log().error("Received object: " + deserialized+" class "+deserialized.getClass());
 			message.getReceiver().tell(deserialized, this.self());
 		} else {
 
-			this.log().error("Requesting next chunk");
 
 			senderProxy.tell(new PullMessage(this.self(), message.getSender()), this.self());
 		}
