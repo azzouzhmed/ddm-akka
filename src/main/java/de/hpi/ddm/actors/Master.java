@@ -101,10 +101,11 @@ public class Master extends AbstractLoggingActor {
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
+
 	protected int passwordCounter = 0;
 	protected void collect(Worker.PasswordCrackedMessage message) {
 		// here we decide to start additional builders
-		this.log().info("Worker {} cracked a password ({}): {} in {} ms0", message.getCracker(), passwordCounter++, message.getPlainPassword(), message.getTime());		if(todo.size() > 0) {
+		this.log().info("Worker {} cracked a password ({}): {} in {} ms", message.getCracker(), passwordCounter++, message.getPlainPassword(), message.getTime());		if(todo.size() > 0) {
 			message.getCracker().tell(todo.remove(0), this.self());
 		}
 		if(todo.size() < 10) {

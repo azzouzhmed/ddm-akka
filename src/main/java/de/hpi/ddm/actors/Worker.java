@@ -133,8 +133,8 @@ public class Worker extends AbstractLoggingActor {
 		long start = System.currentTimeMillis();
 		List<String> crackedHashes = new ArrayList<>();
 		StringBuilder passwordAlphabet = new StringBuilder();
-		String alphabet = this.ALPHABET;
 		int skipChars = 0;
+
 		for(int hashIndex = 0; hashIndex < message.hints.length; hashIndex++) {
 			String hash = message.hints[hashIndex];
 			//this.log().info("Cracking hash {}", hash);
@@ -142,11 +142,11 @@ public class Worker extends AbstractLoggingActor {
 			// try out all permutations for every char
 			boolean foundHash = false;
 			while(!foundHash) {
-				char c = alphabet.toCharArray()[hashIndex + skipChars];
+				char c = this.ALPHABET.toCharArray()[hashIndex + skipChars];
 
 				//this.log().info("Working on char {}", c);
 				List<String> attempts = new ArrayList<>();
-				String currAlphabet = alphabet.replace(String.valueOf(c), "");
+				String currAlphabet = this.ALPHABET.replace(String.valueOf(c), "");
 				heapPermutation(currAlphabet.toCharArray(), 10, attempts);
 				//	this.log().info("char {} hashIndex {}/{} skipChars {}", c, hashIndex,message.hints.length,skipChars);
 				// crack the permutations
