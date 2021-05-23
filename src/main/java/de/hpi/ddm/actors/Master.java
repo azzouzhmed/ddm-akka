@@ -30,16 +30,7 @@ public class Master extends AbstractLoggingActor {
 		return Props.create(Master.class, () -> new Master(reader, collector, welcomeData));
 	}
 
-	public Master(final ActorRef reader, final ActorRef collector, final BloomFilter welcomeData) {
-		this.reader = reader;
-		this.collector = collector;
-		this.workers = new ArrayList<>();
-		this.largeMessageProxy = this.context().actorOf(LargeMessageProxy.props(), LargeMessageProxy.DEFAULT_NAME);
-		this.welcomeData = welcomeData;
-		hashQueue = new ArrayDeque<>();
-		dataQueue = new ArrayDeque<>();
-		crackedPasswords = new HashSet<>();
-	}
+	private final Queue<ActorRef> idleWorkers;
 
 	////////////////////
 	// Actor Messages //
@@ -80,6 +71,18 @@ public class Master extends AbstractLoggingActor {
 	private final ActorRef largeMessageProxy;
 	private final BloomFilter welcomeData;
 
+	public Master(final ActorRef reader, final ActorRef collector, final BloomFilter welcomeData) {
+		this.reader = reader;
+		this.collector = collector;
+		this.workers = new ArrayList<>();
+		this.largeMessageProxy = this.context().actorOf(LargeMessageProxy.props(), LargeMessageProxy.DEFAULT_NAME);
+		this.welcomeData = welcomeData;
+		hashQueue = new ArrayDeque<>();
+		dataQueue = new ArrayDeque<>();
+		crackedPasswords = new HashSet<>();
+		idleWorkers = new ArrayDeque<>();
+	}
+
 	private long startTime;
 
 	/////////////////////
@@ -101,9 +104,14 @@ public class Master extends AbstractLoggingActor {
 			log().info("#{} PASSWORD STILL HAS TO BE CRACKED", dataQueue.size());
 			this.sender().tell(new Worker.CrackPasswordMessage(dataQueue.poll()), this.self());
 		} else {
-			log().info("ALL PASSWORD ARE CRACKED, TOTAL NUMBER: {}", crackedPasswords.size());
-			crackedPasswords.forEach(password -> this.collector.tell(new Collector.CollectMessage(password), this.self()));
-			this.terminate();
+			this.reader.tell(new Reader.ReadMessage(), this.self());
+			idleWorkers.add(sender());
+			log().info("NUMBER OF IDLE WORKERS: {}", idleWorkers.size());
+			if (idleWorkers.size() == workers.size()) {
+				log().info("ALL PASSWORD ARE CRACKED, TOTAL NUMBER: {}", crackedPasswords.size());
+				crackedPasswords.forEach(password -> this.collector.tell(new Collector.CollectMessage(password), this.self()));
+				this.terminate();
+			}
 		}
 	}
 
@@ -121,9 +129,15 @@ public class Master extends AbstractLoggingActor {
 			this.sender().tell(new Worker.HashAlphabetMessage(hashQueue.poll()), this.self());
 		} else {
 			this.log().info("HASHING DONE, CHECK FOR NEW DATA AND START CRACKING");
-			if (!dataQueue.isEmpty()) {
-				this.reader.tell(new Reader.ReadMessage(), this.self());
-				this.sender().tell(new Worker.CrackPasswordMessage(dataQueue.poll()), this.self());
+			log().info("NUMBER OF IDLE WORKERS: {}", idleWorkers.size());
+			this.reader.tell(new Reader.ReadMessage(), this.self());
+			idleWorkers.add(sender());
+			if (idleWorkers.size() == workers.size()) {
+				if (!dataQueue.isEmpty()) {
+					while (!idleWorkers.isEmpty()) {
+						idleWorkers.poll().tell(new Worker.CrackPasswordMessage(dataQueue.poll()), this.self());
+					}
+				}
 			}
 		}
 	}
