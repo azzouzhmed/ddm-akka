@@ -109,7 +109,7 @@ public class Master extends AbstractLoggingActor {
 
 	private void handle(Worker.HintHashValueRequest hintHashValueRequest) {
 		for (var w : workers) {
-			if (!w.equals(sender())) {
+			if (!w.path().equals(hintHashValueRequest.getAskingWorkerAddress())) {
 				w.tell(hintHashValueRequest, this.self());
 			}
 		}
@@ -164,8 +164,8 @@ public class Master extends AbstractLoggingActor {
 
 		var distinctSet = new HashSet<>(dataQueue);
 		distinctSet.addAll(passwordEntries);
+		dataQueue.clear();
 		dataQueue.addAll(distinctSet);
-
 		if (!this.workers.isEmpty() && !hashesAlreadyGenerated) {
 			prepareHashing(message, passwordEntries);
 			for (var w : workers) {
