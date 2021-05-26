@@ -21,7 +21,7 @@ public class Master extends AbstractLoggingActor {
 	public static final String DEFAULT_NAME = "master";
 
 	private final Queue<PasswordEntry> dataQueue;
-	private final Queue<String> hashQueue;
+	private final Queue<Worker.HashAlphabetMessage> hashQueue;
 	private final Set<String> crackedPasswords;
 
 	private boolean hashesAlreadyGenerated;
@@ -126,7 +126,7 @@ public class Master extends AbstractLoggingActor {
 	private void handle(Worker.HashAlphabetDoneMessage hashAlphabetDoneMessage) {
 		if (!hashQueue.isEmpty()) {
 			this.log().info("HASHQUEUE NOT EMPTY, STILL HAVE {} ENTRIES", hashQueue.size());
-			this.sender().tell(new Worker.HashAlphabetMessage(hashQueue.poll()), this.self());
+			this.sender().tell(hashQueue.poll(), this.self());
 		} else {
 			this.log().info("HASHING DONE, CHECK FOR NEW DATA AND START CRACKING");
 			log().info("NUMBER OF IDLE WORKERS: {}", idleWorkers.size());
@@ -163,6 +163,9 @@ public class Master extends AbstractLoggingActor {
 			this.terminate();
 			return;
 		}
+
+
+
 		log().info("RECEIVED SOME DATA! NUMBER OF LINE #{}", message.getLines().size());
 		var passwordEntries = message.getLines().stream().map(line -> {
 			var hashedHints = new ArrayDeque<>(Arrays.asList(line).subList(5, line.length));
@@ -180,10 +183,17 @@ public class Master extends AbstractLoggingActor {
 		distinctSet.addAll(passwordEntries);
 		dataQueue.clear();
 		dataQueue.addAll(distinctSet);
+
+
 		if (!this.workers.isEmpty() && !hashesAlreadyGenerated) {
-			prepareHashing(message, passwordEntries);
+			// only called once
+
+			// fills hash queue
+			prepareHashing(message);
+
+
 			for (var w : workers) {
-				w.tell(new Worker.HashAlphabetMessage(hashQueue.poll()), this.self());
+				w.tell(hashQueue.poll(), this.self());
 			}
 			hashesAlreadyGenerated = true;
 		}
@@ -195,7 +205,7 @@ public class Master extends AbstractLoggingActor {
 		this.reader.tell(new Reader.ReadMessage(), this.self());
 	}
 
-	private void prepareHashing(BatchMessage message, List<PasswordEntry> passwordEntries) {
+	private List<Character> prepareHashing(BatchMessage message) {
 		//get all password characters
 		var passwordAlphabetList = message.getLines()
 				.stream()
@@ -208,13 +218,45 @@ public class Master extends AbstractLoggingActor {
 				.flatMap(Stream::distinct)
 				.collect(Collectors.toList());
 
+		List<String> allprefixes = getAllPasswordSuffixes(passwordAlphabetCharacters);
 
 		for (var c : passwordAlphabetCharacters) {
+			var prefixes = allprefixes.stream().filter(s -> !s.contains(c.toString())).collect(Collectors.toList());
 			for (var passwordAlphabet : passwordAlphabetList) {
-				var passwordAlphabetToHash = passwordAlphabet.replace(c.toString(), "");
-				hashQueue.add(passwordAlphabetToHash);
+				var originalAlphabet = passwordAlphabet.replace(c.toString(), "");
+
+
+
+				prefixes.stream().forEach(prefix -> {
+					var cleanAlphabet = originalAlphabet;
+
+					// remove prefixes
+					for (var prefixChar : prefix.toCharArray()) {
+						cleanAlphabet = cleanAlphabet.replace(String.valueOf(prefixChar), "");
+					}
+
+					// add each
+					hashQueue.add(new Worker.HashAlphabetMessage(cleanAlphabet, prefix));
+				});
 			}
 		}
+		return passwordAlphabetCharacters;
+	}
+
+	// Liste aller möglichen kombinationen aus 2 chars aus dem passwort alphabet
+	private List<String> getAllPasswordSuffixes(List<Character> alph) {
+		List<String> r = new ArrayList<>();
+		int alength = alph.size();
+
+		for (int first = 0; first < alength; first++) {
+			for(int sec = 0; sec  < alength; sec++) {
+				if(first == sec) {
+					r.add(String.valueOf(alph.get(first)));
+				}
+			}
+		}
+
+		return r;
 	}
 
 	protected void terminate() {
@@ -241,7 +283,7 @@ public class Master extends AbstractLoggingActor {
 
 		this.largeMessageProxy.tell(new LargeMessageProxy.LargeMessage<>(new Worker.WelcomeMessage(this.welcomeData), this.sender()), this.self());
 		if (!hashQueue.isEmpty()) {
-			this.sender().tell(new Worker.HashAlphabetMessage(hashQueue.poll()), this.self());
+			this.sender().tell(hashQueue.poll(), this.self());
 		}
 	}
 

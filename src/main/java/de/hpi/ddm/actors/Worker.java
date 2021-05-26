@@ -189,8 +189,12 @@ public class Worker extends AbstractLoggingActor {
 	private void hashAlphabet(HashAlphabetMessage alphabetMessage) {
 		var start = System.currentTimeMillis();
 		alphabets.add(alphabetMessage.getPasswordAlphabet());
+		this.log().info("HASHING ALPHABET: {}", alphabetMessage.getPasswordAlphabet());
+
 		var permutations = new ArrayList<String>();
-		heapPermutation(alphabetMessage.getPasswordAlphabet().toCharArray(), 10, permutations);
+		heapPermutation(alphabetMessage.getPasswordAlphabet().toCharArray(), alphabetMessage.getPasswordAlphabet().length(), permutations, alphabetMessage.getPasswordSuffix());
+
+
 		this.log().info("ALPHABET: {}", alphabetMessage.getPasswordAlphabet());
 		for (var permutation : permutations) {
 			var hashed = hash(permutation);
@@ -243,6 +247,7 @@ public class Worker extends AbstractLoggingActor {
 	public static class HashAlphabetMessage implements Serializable {
 		private static final long serialVersionUID = 1L;
 		private String passwordAlphabet;
+		private String passwordSuffix;
 	}
 
 	@Data
@@ -313,13 +318,13 @@ public class Worker extends AbstractLoggingActor {
 	// Generating all permutations of an array using Heap's Algorithm
 	// https://en.wikipedia.org/wiki/Heap's_algorithm
 	// https://www.geeksforgeeks.org/heaps-algorithm-for-generating-permutations/
-	private void heapPermutation(char[] a, int size, List<String> l) {
+	private void heapPermutation(char[] a, int size, List<String> l, String prefix) {
 		// If size is 1, store the obtained permutation
 		if (size == 1)
-			l.add(new String(a));
+			l.add(prefix+new String(a));
 
 		for (int i = 0; i < size; i++) {
-			heapPermutation(a, size - 1, l);
+			heapPermutation(a, size - 1, l, prefix);
 
 			// If size is odd, swap first and last element
 			if (size % 2 == 1) {
