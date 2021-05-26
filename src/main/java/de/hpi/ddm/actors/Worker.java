@@ -81,7 +81,7 @@ public class Worker extends AbstractLoggingActor {
 
 	private void lookUp(HintHashValueRequest hintHashValueRequest) {
 		if (hashValueAlphabetMap.containsKey(hintHashValueRequest.hashedValue)) {
-			this.context().actorSelection(hintHashValueRequest.getAskingWorkerAddress())
+			hintHashValueRequest.getAskingWorkerAddress()
 					.tell(new HintHashValueResponse(
 									hintHashValueRequest.hashedValue,
 									hashValueAlphabetMap.get(hintHashValueRequest.hashedValue),
@@ -113,7 +113,7 @@ public class Worker extends AbstractLoggingActor {
 		} else {
 			this.getContext()
 					.actorSelection(this.masterSystem.address() + "/user/" + Master.DEFAULT_NAME)
-					.tell(new HintHashValueRequest(hashedHint, getSelf().path()), this.self());
+					.tell(new HintHashValueRequest(hashedHint, getSelf()), this.self());
 			return true;
 		}
 		return false;
@@ -291,7 +291,7 @@ public class Worker extends AbstractLoggingActor {
 	public static class HintHashValueRequest implements Serializable {
 		private static final long serialVersionUID = 1L;
 		private String hashedValue;
-		private ActorPath askingWorkerAddress;
+		private ActorRef askingWorkerAddress;
 	}
 
 	private void handle(MemberRemoved message) {
