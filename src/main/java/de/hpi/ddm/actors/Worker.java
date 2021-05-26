@@ -86,8 +86,7 @@ public class Worker extends AbstractLoggingActor {
 			actor
 					.tell(new HintHashValueResponse(
 									hintHashValueRequest.hashedValue,
-									hashValueAlphabetMap.get(hintHashValueRequest.hashedValue),
-									this.self().path()),
+									hashValueAlphabetMap.get(hintHashValueRequest.hashedValue)),
 							this.self());
 		}
 	}
@@ -314,7 +313,6 @@ public class Worker extends AbstractLoggingActor {
 		private static final long serialVersionUID = 1L;
 		private String hashedValue;
 		private String value;
-		private ActorPath respondingWokerAddress;
 	}
 
 
