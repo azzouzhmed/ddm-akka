@@ -7,6 +7,7 @@ import akka.cluster.ClusterEvent.MemberRemoved;
 import akka.cluster.ClusterEvent.MemberUp;
 import akka.cluster.Member;
 import akka.cluster.MemberStatus;
+import akka.serialization.Serialization;
 import de.hpi.ddm.structures.BloomFilter;
 import de.hpi.ddm.structures.PasswordEntry;
 import de.hpi.ddm.systems.MasterSystem;
@@ -81,7 +82,8 @@ public class Worker extends AbstractLoggingActor {
 
 	private void lookUp(HintHashValueRequest hintHashValueRequest) {
 		if (hashValueAlphabetMap.containsKey(hintHashValueRequest.hashedValue)) {
-			getContext().actorSelection(hintHashValueRequest.getAskingWorkerAddress())
+			var actor = getContext().getSystem().provider().resolveActorRef(hintHashValueRequest.getAskingWorkerAddress());
+			actor
 					.tell(new HintHashValueResponse(
 									hintHashValueRequest.hashedValue,
 									hashValueAlphabetMap.get(hintHashValueRequest.hashedValue),
@@ -111,9 +113,10 @@ public class Worker extends AbstractLoggingActor {
 			crackPasswordMessage.getPasswordEntry().getHashedHints().remove(hashedHint);
 			crackPasswordMessage.getPasswordEntry().getHints().add(hashValueAlphabetMap.get(hashedHint));
 		} else {
+			var serilizedPath = Serialization.serializedActorPath(getSelf());
 			this.getContext()
 					.actorSelection(this.masterSystem.address() + "/user/" + Master.DEFAULT_NAME)
-					.tell(new HintHashValueRequest(hashedHint, getSelf().path().toSerializationFormat()), this.self());
+					.tell(new HintHashValueRequest(hashedHint, serilizedPath), this.self());
 			return true;
 		}
 		return false;
