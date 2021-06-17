@@ -1,10 +1,5 @@
 package de.hpi.ddm.actors;
 
-import java.io.Serializable;
-import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.LinkedList;
-
 import akka.actor.AbstractLoggingActor;
 import akka.actor.ActorRef;
 import akka.actor.ActorSelection;
@@ -13,6 +8,11 @@ import de.hpi.ddm.singletons.KryoPoolSingleton;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.io.Serializable;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
+import java.util.LinkedList;
 
 public class LargeMessageProxy extends AbstractLoggingActor {
 
@@ -80,11 +80,8 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	}
 	private void handle(PullMessage pull) {
 		// just send the next entry, if we're not finished yet
-		this.log().info("Pull, size= " + this.pleaseSendMe.size());
-
 		if(this.pleaseSendMe.size() > 0) {
 			BytesMessage m = this.pleaseSendMe.removeFirst();
-			this.log().info("Pull from " + pull.sender.toString()+" last chunk: "+m.lastChunk);
 			pull.sender.tell(m, this.self());
 		}
 	}
@@ -111,14 +108,14 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 
 		// serialize large message
 		byte[] serialized = KryoPoolSingleton.get().toBytesWithClass(message);
-		byte[] range = new byte[LargeMessageProxy.MAX_MSG_LENGTH];
+		byte[] range;
 
 		// split serialized data into smaller chunks
 		int rangeStart = 0, rangeEnd = 0;
 
 
 		for (rangeStart = 0; rangeStart < serialized.length; rangeStart += LargeMessageProxy.MAX_MSG_LENGTH) {
-			rangeEnd = rangeStart+LargeMessageProxy.MAX_MSG_LENGTH;
+			rangeEnd = rangeStart + LargeMessageProxy.MAX_MSG_LENGTH;
 			if (rangeEnd > serialized.length) {
 				rangeEnd = serialized.length;
 			}
@@ -146,10 +143,10 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		this.alreadyReceived.addLast(message);
 		ActorSelection senderProxy = this.context().actorSelection(message.sender.path().child(DEFAULT_NAME));
 
-		if(message.lastChunk){
+		if(message.lastChunk) {
 			// put all byte arrays back together and then deserialize them
 			ByteBuffer buff = ByteBuffer.allocate(this.alreadyReceived.size() * LargeMessageProxy.MAX_MSG_LENGTH);
-
+			log().info("TOTAL BUFFER CAPACTIY: {}", buff.capacity());
 			for (BytesMessage msg : this.alreadyReceived) {
 				byte[] bytes = (byte[]) msg.bytes;
 				buff.put(bytes);
@@ -158,10 +155,8 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 			// now deserialize
 			Object deserialized = KryoPoolSingleton.get().fromBytes(buff.array());
 
-			message.getReceiver().tell(deserialized, this.self());
+			message.getReceiver().tell(deserialized, message.getSender());
 		} else {
-
-
 			senderProxy.tell(new PullMessage(this.self(), message.getSender()), this.self());
 		}
 	}

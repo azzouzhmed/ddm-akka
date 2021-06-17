@@ -5,8 +5,6 @@ import akka.actor.ActorRef;
 import akka.actor.Props;
 import akka.cluster.Cluster;
 import akka.cluster.ClusterEvent;
-import de.hpi.ddm.singletons.HashStoreSingleton;
-import de.hpi.ddm.structures.BloomFilter;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -73,7 +71,6 @@ public class HashStoreActor extends AbstractLoggingActor {
     @Override
     public void preStart() {
         Reaper.watchWithDefaultReaper(this);
-
         this.cluster.subscribe(this.self(), ClusterEvent.MemberUp.class, ClusterEvent.MemberRemoved.class);
     }
 
