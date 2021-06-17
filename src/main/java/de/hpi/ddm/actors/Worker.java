@@ -191,18 +191,18 @@ public class Worker extends AbstractLoggingActor {
 	private void hashAlphabet(HashAlphabetMessage alphabetMessage) {
 		var start = System.currentTimeMillis();
 		alphabets.add(alphabetMessage.getPasswordAlphabet());
-		this.log().info("HASHING ALPHABET: {}", alphabetMessage.getPasswordAlphabet());
+		//this.log().info("HASHING ALPHABET: {}", alphabetMessage.getPasswordAlphabet());
 
 		var permutations = new ArrayList<String>();
 		heapPermutation(alphabetMessage.getPasswordAlphabet().toCharArray(), alphabetMessage.getPasswordAlphabet().length(), permutations, alphabetMessage.getPasswordSuffix());
 
 
-		this.log().info("ALPHABET: {}", alphabetMessage.getPasswordAlphabet());
+		//this.log().info("ALPHABET: {}", alphabetMessage.getPasswordAlphabet());
 		for (var permutation : permutations) {
 			var hashed = hash(permutation);
 			hashValueAlphabetMap.put(hashed, permutation);
 		}
-		log().info("HASHING FINISHED - TOTAL TIME {} ms", System.currentTimeMillis() - start);
+		//log().info("HASHING FINISHED - TOTAL TIME {} ms", System.currentTimeMillis() - start);
 		this.getContext()
 				.actorSelection(this.masterSystem.address() + "/user/" + Master.DEFAULT_NAME)
 				.tell(new HashAlphabetDoneMessage(alphabetMessage.passwordAlphabet), this.self());

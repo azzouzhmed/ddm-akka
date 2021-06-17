@@ -125,7 +125,7 @@ public class Master extends AbstractLoggingActor {
 
 	private void handle(Worker.HashAlphabetDoneMessage hashAlphabetDoneMessage) {
 		if (!hashQueue.isEmpty()) {
-			this.log().info("HASHQUEUE NOT EMPTY, STILL HAVE {} ENTRIES", hashQueue.size());
+			this.log().info("{} hahes remain", hashQueue.size());
 			this.sender().tell(hashQueue.poll(), this.self());
 		} else {
 			this.log().info("HASHING DONE, CHECK FOR NEW DATA AND START CRACKING");

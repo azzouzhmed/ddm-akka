@@ -21,7 +21,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	////////////////////////
 
 	public static final String DEFAULT_NAME = "largeMessageProxy";
-	public static final int MAX_MSG_LENGTH = 512;	// arbitrary number
+	public static final int MAX_MSG_LENGTH = 1024*25;	// arbitrary number
 
 	private LinkedList<BytesMessage> pleaseSendMe = new LinkedList<>();	// for the sender
 	private LinkedList<BytesMessage> alreadyReceived = new LinkedList<>(); // for the receiver
@@ -80,11 +80,11 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	}
 	private void handle(PullMessage pull) {
 		// just send the next entry, if we're not finished yet
-		this.log().error("Pull, size= " + this.pleaseSendMe.size());
+		this.log().info("Pull, size= " + this.pleaseSendMe.size());
 
 		if(this.pleaseSendMe.size() > 0) {
 			BytesMessage m = this.pleaseSendMe.removeFirst();
-			this.log().error("Pull from " + pull.sender.toString()+" last chunk: "+m.lastChunk);
+			this.log().info("Pull from " + pull.sender.toString()+" last chunk: "+m.lastChunk);
 			pull.sender.tell(m, this.self());
 		}
 	}
@@ -130,6 +130,8 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		// mark last chunk
 		this.pleaseSendMe.getLast().lastChunk = true;
 
+
+		this.log().info("Split a message of {} bytes into {} messages", serialized.length, this.pleaseSendMe.size());
 		// now process the first message
 		BytesMessage firstMessage = this.pleaseSendMe.removeFirst();
 		receiverProxy.tell(firstMessage, this.self());
