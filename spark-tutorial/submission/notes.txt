@@ -1,0 +1,2 @@
+Sowohl das JAR File als auch die CSV Daten sind von der Größe her zu groß um sie auf github hochzuladen.
+Daher für die Evaluierung bitte einmal das JAR selbst bauen und die Daten entsprechend zur Verfügung stellen.
