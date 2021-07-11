@@ -9,7 +9,8 @@ object SimpleSpark extends App {
 
     // Parameter parsing
     type OptionMap = Map[Symbol, Any]
-    def nextOption(map : OptionMap, list: List[String]) : OptionMap = {
+
+    def nextOption(map: OptionMap, list: List[String]): OptionMap = {
       list match {
         case Nil => map
         case "--path" :: value :: tail => nextOption(map ++ Map('path -> value), tail)
@@ -19,6 +20,7 @@ object SimpleSpark extends App {
         case string :: tail => nextOption(map, tail)
       }
     }
+
     val options = nextOption(Map(), args.toList)
 
     val path = options.getOrElse('path, "data/TPCH")
@@ -58,13 +60,13 @@ object SimpleSpark extends App {
     // Spark Tutorial
     //------------------------------------------------------------------------------------------------------------------
 
-    Tutorial.execute(spark)
-
+    //    Tutorial.execute(spark)
+    //
     //------------------------------------------------------------------------------------------------------------------
     // Longest Common Substring Search
     //------------------------------------------------------------------------------------------------------------------
 
-    time {LongestCommonSubstring.discoverLCSs("students2", spark)}
+    //time {LongestCommonSubstring.discoverLCSs("students2", spark)}
 
     //------------------------------------------------------------------------------------------------------------------
     // Inclusion Dependency Discovery (Homework)
@@ -73,6 +75,8 @@ object SimpleSpark extends App {
     val inputs = List("region", "nation", "supplier", "customer", "part", "lineitem", "orders")
       .map(name => s"$path/tpch_$name.csv")
 
-    time {Sindy.discoverINDs(inputs, spark)}
+    time {
+      Sindy.discoverINDs(inputs, spark)
+    }
   }
 }
