@@ -18,7 +18,7 @@ object Sindy {
       .option("delimiter", ";")
       .csv(input))
 
-    println(s"${java.time.LocalTime.now()} DATA LOADED ")
+    println(s"${java.time.LocalTime.now()} DATA READ SUCCESSFULLY ")
     println("---------------------------------------------------------------------------------------------------------")
     println(s"${java.time.LocalTime.now()} MAP COLUMNS BY VALUE...")
 
@@ -31,7 +31,7 @@ object Sindy {
           .toDF("valueColumn", "nameColumn"))
       ).reduce((t1, t2) => t1.union(t2))
 
-    columnData.show()
+    //columnData.show()
     println(s"${java.time.LocalTime.now()} MAPPING COLUMNS BY VALUE FINISHED")
     println("---------------------------------------------------------------------------------------------------------")
     println(s"${java.time.LocalTime.now()} GROUP COLUMNS BY VALUE...")
@@ -45,7 +45,7 @@ object Sindy {
           .map(t => Set(t._2))
           .reduce((a, b) => a union b)))
 
-    valueColumns.show()
+    //valueColumns.show()
     println(s"${java.time.LocalTime.now()} GROUP COLUMNS BY VALUE FINISHED")
     println("---------------------------------------------------------------------------------------------------------")
     println(s"${java.time.LocalTime.now()} GENERATE INDS LISTS...")
@@ -56,7 +56,7 @@ object Sindy {
       .distinct()
       .toDF("INDS")
       .withColumn("INDS", explode($"INDS"))
-    inds.show()
+    //inds.show()
 
     println(s"${java.time.LocalTime.now()} GENERATING INDS LISTS FINISHED")
     println("---------------------------------------------------------------------------------------------------------")
@@ -71,7 +71,7 @@ object Sindy {
           .map(t => t._2)
           .reduce((a, b) => a intersect b)))
       .toDF("Column", "IND")
-    intersected.show()
+    //intersected.show()
     println(s"${java.time.LocalTime.now()} GROUP INDS BY VALUE FINISHED")
     println("---------------------------------------------------------------------------------------------------------")
     println(s"${java.time.LocalTime.now()} FILTER AND COLLECT RESULTS ...")
